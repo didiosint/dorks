@@ -1,2 +1,0 @@
-# dorks
-ejercicios de dorks
