@@ -1,0 +1,1236 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OSINT INTEL — Módulo de Búsqueda en Fuentes Abiertas</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;600;800;900&family=Exo+2:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+<!-- FIREBASE SDK MODULAR — Configuración real del proyecto -->
+<script type="module">
+  import { initializeApp }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, collection, addDoc, getDocs, query, orderBy, serverTimestamp }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  // ── CONFIGURACIÓN FIREBASE (proyecto: dork-a302e) ──
+  const firebaseConfig = {
+    apiKey:            "AIzaSyBlZUcLTisAZmEdBu2G1rQGy23boscZI1k",
+    authDomain:        "dork-a302e.firebaseapp.com",
+    projectId:         "dork-a302e",
+    storageBucket:     "dork-a302e.firebasestorage.app",
+    messagingSenderId: "304037106379",
+    appId:             "1:304037106379:web:1de17d497a4ce4927dc14e"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db  = getFirestore(app);
+  window.db = db;
+  window.firebaseReady = true;
+  console.log("[OSINT INTEL] Firebase conectado — proyecto: dork-a302e");
+
+  // Guardar resultado en Firestore
+  window.saveScore = async function(data) {
+    if (!navigator.onLine) throw new Error("Sin conexión a internet");
+    const docRef = await addDoc(collection(db, "resultados"), {
+      ...data,
+      timestamp: serverTimestamp()
+    });
+    console.log("[OSINT INTEL] Guardado:", docRef.id);
+    return docRef.id;
+  };
+
+  // Cargar tabla de resultados desde Firestore
+  window.loadScores = async function() {
+    try {
+      const q   = query(collection(db, "resultados"), orderBy("timestamp", "desc"));
+      const snap = await getDocs(q);
+      let html = "";
+      snap.forEach(doc => {
+        const d = doc.data();
+        const fecha = d.fecha || (d.timestamp ? new Date(d.timestamp.seconds * 1000).toLocaleString("es-EC") : "—");
+        html += `<tr>
+          <td>${d.grado || "—"}</td>
+          <td>${d.nombre || "—"}</td>
+          <td>${d.puntaje ?? "—"}</td>
+          <td>${fecha}</td>
+        </tr>`;
+      });
+      const tbody = document.getElementById("tabla-resultados");
+      if (tbody) tbody.innerHTML = html || '<tr><td colspan="4" style="color:var(--text3);text-align:center">Sin registros aún</td></tr>';
+    } catch(e) {
+      console.error("[OSINT INTEL] Error cargando resultados:", e);
+    }
+  };
+
+  window.addEventListener("DOMContentLoaded", () => {
+    window.loadScores();
+  });
+</script>
+
+<style>
+/* ══════════════════════════════
+   VARIABLES Y RESET
+   ══════════════════════════════ */
+:root {
+  --bg:      #020508;
+  --bg2:     #050d10;
+  --bg3:     #091419;
+  --card:    #0a1a20;
+  --card2:   #0d2028;
+  --green:   #00ff88;
+  --green2:  #00cc6a;
+  --green3:  #003a1e;
+  --cyan:    #00e5ff;
+  --cyan2:   #0099bb;
+  --amber:   #ffb800;
+  --amber2:  #7a5800;
+  --red:     #ff3355;
+  --red2:    #5a0015;
+  --border:  rgba(0,255,136,0.10);
+  --border2: rgba(0,255,136,0.26);
+  --text:    #c8ffe8;
+  --text2:   #7abf9a;
+  --text3:   #3d7a55;
+  --mono:    'Share Tech Mono', monospace;
+  --display: 'Orbitron', sans-serif;
+  --body:    'Exo 2', sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  background:var(--bg);color:var(--text);font-family:var(--body);
+  font-size:15px;min-height:100vh;overflow-x:hidden;cursor:crosshair;
+}
+body::before{
+  content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,
+    rgba(0,255,136,0.013) 2px,rgba(0,255,136,0.013) 4px);
+}
+body::after{
+  content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(ellipse 80% 60% at 50% 0%,rgba(0,255,136,0.04) 0%,transparent 70%);
+}
+
+/* ── PROGRESS ── */
+.progress-bar{
+  position:fixed;top:0;left:0;z-index:200;height:3px;
+  background:var(--green);box-shadow:0 0 10px var(--green);
+  transition:width .4s ease;width:0%;
+}
+
+/* ── HEADER ── */
+.header{
+  position:relative;z-index:10;
+  border-bottom:1px solid var(--border2);
+  background:linear-gradient(180deg,rgba(0,255,136,0.04) 0%,transparent 100%);
+  padding:28px 40px 24px;
+}
+.header-inner{
+  max-width:1100px;margin:0 auto;
+  display:flex;align-items:center;gap:28px;flex-wrap:wrap;
+}
+.header-text{flex:1;min-width:240px}
+.header-tag{
+  font-family:var(--mono);font-size:10px;letter-spacing:.18em;color:var(--green2);
+  margin-bottom:6px;display:flex;align-items:center;gap:8px;
+}
+.header-tag::before{content:'▶';color:var(--green);font-size:8px;animation:blink 1.2s step-end infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+.header h1{
+  font-family:var(--display);font-size:clamp(20px,3.2vw,36px);
+  font-weight:800;letter-spacing:.06em;color:var(--green);
+  text-shadow:0 0 28px rgba(0,255,136,0.45);line-height:1.1;margin-bottom:6px;
+}
+.header h1 span{color:var(--cyan)}
+.header-sub{font-size:12px;color:var(--text2);font-family:var(--mono);letter-spacing:.04em}
+.header-flags{display:flex;flex-direction:column;align-items:flex-end;gap:5px}
+.flag-badge{
+  font-family:var(--mono);font-size:11px;letter-spacing:.08em;
+  padding:4px 12px;border-radius:2px;border:1px solid var(--border2);
+  background:var(--card);color:var(--text2);
+}
+.id-panel{
+  max-width:1100px;margin:0 auto;
+  display:flex;align-items:center;gap:16px;margin-top:18px;flex-wrap:wrap;
+}
+.id-field{display:flex;flex-direction:column;gap:4px}
+.id-label{
+  font-family:var(--mono);font-size:10px;color:var(--text3);
+  letter-spacing:.12em;text-transform:uppercase;
+}
+.id-input{
+  background:var(--card2);border:1px solid var(--border2);border-radius:3px;
+  padding:7px 14px;font-family:var(--mono);font-size:13px;color:var(--green);
+  outline:none;width:200px;transition:border-color .2s,box-shadow .2s;
+}
+.id-input:focus{border-color:var(--green);box-shadow:0 0 10px rgba(0,255,136,0.15)}
+.id-input::placeholder{color:var(--text3)}
+
+/* ── NAV ── */
+.nav-wrap{
+  position:sticky;top:0;z-index:20;
+  background:rgba(2,5,8,0.94);backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--border);
+}
+.nav-inner{
+  max-width:1100px;margin:0 auto;display:flex;align-items:stretch;
+  padding:0 40px;overflow-x:auto;scrollbar-width:none;
+}
+.nav-inner::-webkit-scrollbar{display:none}
+.nav-tab{
+  font-family:var(--mono);font-size:11px;letter-spacing:.08em;
+  color:var(--text3);padding:13px 18px;border:none;background:transparent;
+  cursor:pointer;border-bottom:2px solid transparent;
+  transition:all .18s;white-space:nowrap;display:flex;align-items:center;gap:8px;
+}
+.nav-tab:hover{color:var(--text2)}
+.nav-tab.active{color:var(--green);border-bottom-color:var(--green);text-shadow:0 0 10px rgba(0,255,136,0.4)}
+.nav-tab .badge{
+  background:var(--green3);color:var(--green2);
+  font-size:9px;padding:2px 6px;border-radius:2px;
+}
+
+/* ── MAIN ── */
+.main{
+  position:relative;z-index:5;
+  max-width:1100px;margin:0 auto;padding:36px 40px 80px;
+}
+
+/* ── SCORE PANEL ── */
+.score-panel{
+  display:flex;align-items:center;gap:28px;
+  background:var(--card);border:1px solid var(--border2);
+  border-radius:4px;padding:20px 28px;margin-bottom:28px;flex-wrap:wrap;
+}
+.score-ring{display:flex;align-items:baseline;gap:2px;flex-shrink:0}
+.score-val{
+  font-family:var(--display);font-size:42px;font-weight:900;
+  color:var(--green);text-shadow:0 0 24px rgba(0,255,136,0.5);line-height:1;
+}
+.score-total{font-family:var(--display);font-size:18px;color:var(--text3);font-weight:600}
+.score-meta{flex:1;min-width:200px}
+.score-title{
+  font-family:var(--mono);font-size:11px;color:var(--text3);
+  letter-spacing:.1em;margin-bottom:10px;text-transform:uppercase;
+}
+.score-breakdown{display:flex;gap:12px;flex-wrap:wrap}
+.score-ex{
+  font-family:var(--mono);font-size:11px;color:var(--text3);
+  display:flex;flex-direction:column;gap:2px;
+}
+.score-ex span{font-size:14px;color:var(--green2);font-weight:600}
+.score-user-info{
+  font-family:var(--mono);font-size:11px;color:var(--text2);
+  border-left:1px solid var(--border2);padding-left:20px;line-height:2;
+}
+.score-user-info strong{color:var(--green)}
+
+/* ── SECTIONS ── */
+.section{display:none;animation:fadeIn .28s ease}
+.section.active{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+.sec-header{
+  display:flex;align-items:flex-start;gap:20px;margin-bottom:28px;
+  padding:22px 26px;background:var(--card);border:1px solid var(--border2);
+  border-radius:4px;position:relative;overflow:hidden;
+}
+.sec-header::before{
+  content:'';position:absolute;left:0;top:0;bottom:0;width:3px;
+  background:var(--green);box-shadow:0 0 10px var(--green);
+}
+.sec-num{
+  font-family:var(--display);font-size:38px;font-weight:900;
+  color:var(--green3);line-height:1;flex-shrink:0;margin-top:2px;
+}
+.sec-title{
+  font-family:var(--display);font-size:17px;font-weight:700;
+  color:var(--green);letter-spacing:.07em;margin-bottom:6px;
+}
+.sec-desc{font-size:13.5px;color:var(--text2);line-height:1.7}
+
+/* ── REFERENCE CARDS ── */
+.ref-grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));
+  gap:14px;margin-bottom:28px;
+}
+.ref-card{
+  background:var(--card);border:1px solid var(--border);border-radius:4px;
+  padding:18px 20px;transition:border-color .18s,box-shadow .18s;cursor:pointer;
+}
+.ref-card:hover{border-color:var(--border2);box-shadow:0 0 18px rgba(0,255,136,0.06)}
+.ref-card-op{
+  font-family:var(--mono);font-size:15px;font-weight:600;color:var(--cyan);
+  margin-bottom:5px;text-shadow:0 0 10px rgba(0,229,255,0.35);
+}
+.ref-card-name{
+  font-size:11px;color:var(--green2);font-family:var(--mono);
+  letter-spacing:.08em;margin-bottom:8px;text-transform:uppercase;
+}
+.ref-card-desc{font-size:13px;color:var(--text2);line-height:1.6}
+.ref-card-ex{
+  margin-top:10px;padding:7px 12px;
+  background:rgba(0,229,255,0.04);border-left:2px solid var(--cyan2);
+  font-family:var(--mono);font-size:11.5px;color:var(--text2);border-radius:0 3px 3px 0;
+}
+.ref-card-ex span{color:var(--cyan)}
+
+/* ── EXERCISE CARDS ── */
+.ex-list{display:flex;flex-direction:column;gap:18px}
+.ex-card{
+  background:var(--card);border:1px solid var(--border);
+  border-radius:4px;overflow:hidden;transition:border-color .2s;
+}
+.ex-card.answered-ok{border-color:rgba(0,255,136,0.38)}
+.ex-card.answered-fail{border-color:rgba(255,51,85,0.35)}
+.ex-card-head{
+  display:flex;align-items:flex-start;gap:14px;padding:18px 22px 14px;
+}
+.ex-num{
+  font-family:var(--display);font-size:10px;font-weight:700;
+  color:var(--text3);letter-spacing:.1em;flex-shrink:0;margin-top:3px;
+}
+.ex-scenario{font-size:14px;color:var(--text);line-height:1.65;flex:1}
+.ex-scenario strong{color:var(--amber)}
+.ex-scenario code{
+  font-family:var(--mono);font-size:12px;color:var(--cyan);
+  background:rgba(0,229,255,0.07);padding:2px 7px;border-radius:3px;
+  display:inline-block;margin-top:6px;
+}
+.country-tag{
+  font-family:var(--mono);font-size:10px;padding:2px 8px;border-radius:2px;
+  margin-right:6px;vertical-align:middle;display:inline-block;
+}
+.ec{background:rgba(255,184,0,0.10);color:var(--amber);border:1px solid rgba(255,184,0,0.28)}
+.ar{background:rgba(0,229,255,0.08);color:var(--cyan);border:1px solid rgba(0,229,255,0.22)}
+.ex-body{padding:0 22px 20px}
+
+/* ── HINT ── */
+.hint-toggle{
+  background:transparent;border:1px solid rgba(255,184,0,0.25);border-radius:3px;
+  padding:5px 12px;font-family:var(--mono);font-size:11px;color:var(--text3);
+  cursor:pointer;margin-bottom:10px;transition:color .18s,border-color .18s;
+}
+.hint-toggle:hover{color:var(--amber);border-color:var(--amber)}
+.hint-box{
+  display:none;background:rgba(255,184,0,0.06);border:1px solid rgba(255,184,0,0.22);
+  border-radius:3px;padding:10px 14px;margin-bottom:12px;
+  font-family:var(--mono);font-size:12px;color:var(--amber);line-height:1.6;
+}
+.hint-box.show{display:block}
+
+/* ── CHOICE BUTTONS ── */
+.choice-list{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.choice-btn{
+  background:var(--card2);border:1px solid var(--border);border-radius:3px;
+  padding:11px 16px;font-family:var(--body);font-size:13.5px;color:var(--text2);
+  cursor:pointer;text-align:left;transition:all .15s;
+  display:flex;align-items:center;gap:10px;line-height:1.5;
+}
+.choice-btn:hover:not(:disabled){
+  border-color:var(--border2);color:var(--text);background:rgba(0,255,136,0.04);
+}
+.choice-btn.ok{border-color:var(--green);color:var(--green);background:rgba(0,255,136,0.07)}
+.choice-btn.fail{border-color:var(--red);color:var(--red);background:rgba(255,51,85,0.07)}
+.choice-btn:disabled{cursor:not-allowed}
+.choice-letter{
+  width:26px;height:26px;border-radius:50%;
+  background:var(--bg3);border:1px solid var(--border2);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:11px;font-weight:700;
+  color:var(--text3);flex-shrink:0;transition:all .15s;
+}
+.choice-btn.ok .choice-letter{background:var(--green3);border-color:var(--green);color:var(--green)}
+.choice-btn.fail .choice-letter{background:var(--red2);border-color:var(--red);color:var(--red)}
+
+/* ── TOKEN BUILDER ── */
+.build-area{
+  background:#000;border:1px solid var(--green3);border-radius:3px;
+  padding:10px 14px;font-family:var(--mono);font-size:13px;
+  color:var(--green);min-height:40px;margin-bottom:10px;
+}
+.build-preview.empty{color:var(--text3);font-style:italic}
+.token-pool{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.token{
+  font-family:var(--mono);font-size:12px;padding:5px 12px;
+  border-radius:3px;border:1px solid;cursor:pointer;
+  transition:all .15s;user-select:none;
+}
+.token.op{color:var(--cyan);border-color:rgba(0,229,255,0.35);background:rgba(0,229,255,0.07)}
+.token.str{color:var(--green);border-color:rgba(0,255,136,0.35);background:rgba(0,255,136,0.07)}
+.token.val{color:var(--amber);border-color:rgba(255,184,0,0.35);background:rgba(255,184,0,0.07)}
+.token:hover:not(.used){filter:brightness(1.3);transform:translateY(-1px)}
+.token.used{opacity:.3;cursor:not-allowed;transform:none;filter:none}
+.check-btn,.reset-btn-build{
+  font-family:var(--mono);font-size:11px;letter-spacing:.08em;
+  border-radius:3px;padding:7px 16px;cursor:pointer;transition:all .18s;
+  margin-right:8px;margin-top:4px;
+}
+.check-btn{background:var(--green3);border:1px solid var(--green2);color:var(--green)}
+.check-btn:hover:not(:disabled){background:rgba(0,255,136,0.18);box-shadow:0 0 10px rgba(0,255,136,0.2)}
+.check-btn:disabled{opacity:.4;cursor:not-allowed}
+.reset-btn-build{background:transparent;border:1px solid var(--border2);color:var(--text3)}
+.reset-btn-build:hover{color:var(--text2);border-color:var(--text3)}
+
+/* ── FILL IN ── */
+.fill-row{
+  font-family:var(--mono);font-size:13px;color:var(--text2);
+  margin-bottom:12px;line-height:2.2;
+}
+.fill-input{
+  background:transparent;border:none;border-bottom:1px solid var(--green2);
+  outline:none;font-family:var(--mono);font-size:13px;color:var(--green);
+  padding:0 4px;width:220px;display:inline-block;caret-color:var(--green);
+}
+.fill-input::placeholder{color:var(--text3)}
+
+/* ── FEEDBACK ── */
+.feedback{
+  display:none;margin-top:12px;padding:12px 16px;border-radius:3px;
+  font-size:13px;line-height:1.65;font-family:var(--body);
+}
+.feedback.show{display:block}
+.feedback.ok{background:rgba(0,255,136,0.07);border:1px solid rgba(0,255,136,0.3);color:var(--green)}
+.feedback.fail{background:rgba(255,51,85,0.07);border:1px solid rgba(255,51,85,0.3);color:#ff8090}
+.feedback .correct{color:var(--cyan);font-family:var(--mono);font-size:12px}
+
+/* ── PANTALLA FINAL ── */
+.final{
+  display:none;text-align:center;background:var(--card);
+  border:1px solid var(--border2);border-radius:4px;
+  padding:56px 40px;margin-top:20px;
+}
+.final.show{display:block;animation:fadeIn .5s ease}
+.final-grade{
+  font-family:var(--display);font-size:80px;font-weight:900;
+  line-height:1;margin-bottom:12px;
+}
+.final-label{
+  font-family:var(--display);font-size:16px;font-weight:700;
+  letter-spacing:.12em;margin-bottom:24px;color:var(--text2);
+}
+.final-id{
+  font-family:var(--mono);font-size:13px;color:var(--text3);
+  margin-bottom:28px;line-height:2;
+}
+.final-id strong{color:var(--green)}
+.final-stats{display:flex;justify-content:center;gap:40px;margin-bottom:32px;flex-wrap:wrap}
+.fstat{
+  display:flex;flex-direction:column;align-items:center;gap:4px;
+  font-family:var(--mono);font-size:12px;color:var(--text3);letter-spacing:.08em;
+}
+.fstat strong{font-family:var(--display);font-size:28px;color:var(--text)}
+.final-btns{display:flex;justify-content:center;gap:12px;flex-wrap:wrap}
+.save-btn{
+  font-family:var(--mono);font-size:12px;letter-spacing:.1em;
+  padding:11px 26px;border-radius:3px;cursor:pointer;transition:all .18s;
+  background:var(--green3);border:1px solid var(--green2);color:var(--green);
+}
+.save-btn:hover{box-shadow:0 0 14px rgba(0,255,136,0.25)}
+.save-btn:disabled{opacity:.5;cursor:not-allowed}
+.save-msg{font-family:var(--mono);font-size:11px;margin-top:12px;color:var(--text3)}
+
+/* ── TABLA DE RESULTADOS ── */
+.results-section{
+  margin-top:48px;padding-top:36px;border-top:1px solid var(--border2);
+}
+.results-title{
+  font-family:var(--display);font-size:14px;font-weight:700;
+  color:var(--green);letter-spacing:.1em;margin-bottom:20px;
+  display:flex;align-items:center;gap:10px;
+}
+.results-title::before{
+  content:'';display:inline-block;width:3px;height:20px;
+  background:var(--green);box-shadow:0 0 8px var(--green);border-radius:2px;
+}
+.results-table-wrap{overflow-x:auto}
+table.results-table{
+  width:100%;border-collapse:collapse;
+  font-family:var(--mono);font-size:12px;
+}
+table.results-table th{
+  background:var(--bg3);border:1px solid var(--border2);
+  padding:10px 14px;color:var(--green2);letter-spacing:.1em;
+  text-transform:uppercase;font-weight:600;text-align:left;
+}
+table.results-table td{
+  border:1px solid var(--border);padding:9px 14px;color:var(--text2);
+}
+table.results-table tr:hover td{background:rgba(0,255,136,0.02)}
+.load-results-btn{
+  margin-top:12px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;
+  padding:6px 16px;border-radius:3px;cursor:pointer;transition:all .18s;
+  background:transparent;border:1px solid var(--border2);color:var(--text3);
+}
+.load-results-btn:hover{color:var(--cyan);border-color:var(--cyan)}
+
+/* ── RESPONSIVE ── */
+@media(max-width:700px){
+  .header{padding:20px 20px 18px}
+  .header-inner{gap:16px}
+  .header-flags{align-items:flex-start}
+  .main{padding:24px 20px 60px}
+  .id-input{width:160px}
+  .score-panel{flex-direction:column;gap:16px}
+  .score-user-info{border-left:none;padding-left:0;border-top:1px solid var(--border);padding-top:12px}
+  .final-grade{font-size:56px}
+}
+</style>
+</head>
+<body>
+
+<div class="progress-bar" id="progress-bar"></div>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="header-inner">
+    <div class="header-text">
+      <div class="header-tag">MÓDULO DE ENTRENAMIENTO · FUENTES ABIERTAS · OSINT/SOCMINT</div>
+      <h1>OSINT <span>INTEL</span></h1>
+      <div class="header-sub">// Búsqueda y análisis de información pública — Personal de inteligencia sin perfil técnico</div>
+    </div>
+    <div class="header-flags">
+      <div class="flag-badge">🇪🇨 ECU — Inteligencia Aérea</div>
+      <div class="flag-badge">🇦🇷 ARG — Personal de Inteligencia</div>
+    </div>
+  </div>
+  <div class="id-panel">
+    <div class="id-field">
+      <label class="id-label" for="inp-grado">// Grado militar</label>
+      <input class="id-input" id="inp-grado" type="text" placeholder="Ej: Sgto. 1ro." autocomplete="off">
+    </div>
+    <div class="id-field">
+      <label class="id-label" for="inp-nombre">// Nombre completo</label>
+      <input class="id-input" id="inp-nombre" type="text" placeholder="Apellido Nombre" autocomplete="off">
+    </div>
+  </div>
+</div>
+
+<!-- NAV -->
+<div class="nav-wrap">
+  <div class="nav-inner" id="nav"></div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- Score panel -->
+  <div class="score-panel" id="score-panel">
+    <div class="score-ring">
+      <div class="score-val" id="sc-val">0</div>
+      <div class="score-total">/20</div>
+    </div>
+    <div class="score-meta">
+      <div class="score-title">Puntuación en tiempo real</div>
+      <div class="score-breakdown">
+        <div class="score-ex"><span id="sc-e1">0/5</span>Ej. 1</div>
+        <div class="score-ex"><span id="sc-e2">0/5</span>Ej. 2</div>
+        <div class="score-ex"><span id="sc-e3">0/5</span>Ej. 3</div>
+        <div class="score-ex"><span id="sc-e4">0/5</span>Ej. 4</div>
+      </div>
+    </div>
+    <div class="score-user-info">
+      Grado: <strong id="disp-grado">—</strong><br>
+      Nombre: <strong id="disp-nombre">—</strong>
+    </div>
+  </div>
+
+  <div id="sections"></div>
+
+  <!-- PANTALLA FINAL -->
+  <div class="final" id="final">
+    <div class="final-grade" id="final-grade"></div>
+    <div class="final-label" id="final-label"></div>
+    <div class="final-id" id="final-id"></div>
+    <div class="final-stats">
+      <div class="fstat"><strong id="fs-correct">0</strong>Correctas</div>
+      <div class="fstat"><strong id="fs-total">0</strong>Total</div>
+      <div class="fstat"><strong id="fs-pct">0%</strong>Precisión</div>
+    </div>
+    <div class="final-btns">
+      <button class="save-btn" id="save-btn" onclick="handleSave()">▶ ENVIAR TEST</button>
+    </div>
+    <div class="save-msg" id="save-msg"></div>
+
+    <!-- Tabla resultados dentro de pantalla final -->
+    <div class="results-section">
+      <div class="results-title">RESULTADOS REGISTRADOS</div>
+      <div class="results-table-wrap">
+        <table class="results-table">
+          <thead>
+            <tr>
+              <th>Grado</th>
+              <th>Nombre</th>
+              <th>Puntaje /20</th>
+              <th>Fecha</th>
+            </tr>
+          </thead>
+          <tbody id="tabla-resultados">
+            <tr><td colspan="4" style="color:var(--text3);text-align:center">Cargando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <button class="load-results-btn" onclick="window.loadScores()">↺ ACTUALIZAR TABLA</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// TABLA DE REFERENCIA
+// ══════════════════════════════════════════════════════════════
+const REFERENCE = [
+  { op:'site:', name:'RESTRINGIR A UN SITIO WEB',
+    desc:'Limita los resultados a un dominio específico. Ideal para portales gubernamentales o institucionales.',
+    ex:'<span>site:</span>gob.ec filetype:pdf presupuesto' },
+  { op:'filetype:', name:'TIPO DE DOCUMENTO',
+    desc:'Busca archivos con extensión específica: pdf, docx, xls, pptx. Útil para informes, contratos y resoluciones.',
+    ex:'<span>filetype:</span>pdf informe anual' },
+  { op:'intitle:', name:'PALABRA EN EL TÍTULO',
+    desc:'La palabra debe aparecer en el título del documento. Ayuda a encontrar documentos cuyo tema principal es el que buscas.',
+    ex:'<span>intitle:</span>"informe de gestión" site:gob.ec' },
+  { op:'inurl:', name:'PALABRA EN LA DIRECCIÓN WEB',
+    desc:'La palabra debe estar en la URL del resultado. Útil para secciones específicas de sitios institucionales.',
+    ex:'<span>inurl:</span>transparencia site:gob.ec' },
+  { op:'intext:', name:'PALABRA EN EL CONTENIDO',
+    desc:'La palabra debe aparecer dentro del texto del documento. Se usa para buscar información específica en publicaciones.',
+    ex:'<span>intext:</span>"contrato de licitación" site:gob.ar' },
+  { op:'"comillas"', name:'FRASE EXACTA',
+    desc:'Busca exactamente esa frase. Reduce resultados irrelevantes — ideal para nombres, cargos o términos precisos.',
+    ex:'"Juan Pérez Ríos" site:gob.ec' },
+  { op:'cache:', name:'VERSIÓN GUARDADA',
+    desc:'Muestra la copia guardada por Google de una página. Permite ver contenido modificado o eliminado.',
+    ex:'<span>cache:</span>ejemplo.gob.ec/resoluciones' },
+  { op:'related:', name:'SITIOS SIMILARES',
+    desc:'Encuentra sitios con contenido similar. Útil para mapear el ecosistema digital de una organización.',
+    ex:'<span>related:</span>defensa.gob.ar' },
+  { op:'OR', name:'UNO U OTRO',
+    desc:'Amplía la búsqueda para encontrar resultados con una u otra palabra. Permite cubrir varios términos a la vez.',
+    ex:'informe (site:gob.ec OR site:gob.ar) filetype:pdf' },
+  { op:'-', name:'EXCLUIR TÉRMINO',
+    desc:'El guión antes de una palabra la elimina de los resultados. Sirve para filtrar información irrelevante.',
+    ex:'"Juan Pérez" -facebook.com -twitter.com' },
+  { op:'*', name:'COMODÍN',
+    desc:'Reemplaza cualquier palabra en esa posición. Útil cuando no conoces una parte del texto buscado.',
+    ex:'"director * de inteligencia"' },
+  { op:'..', name:'RANGO DE FECHAS / NÚMEROS',
+    desc:'Busca dentro de un rango de números o años. Muy práctico para filtrar informes por período.',
+    ex:'informe anual site:gob.ec filetype:pdf 2020..2024' },
+];
+
+// ══════════════════════════════════════════════════════════════
+// EJERCICIOS
+// ══════════════════════════════════════════════════════════════
+const EXERCISES = [
+  // EJ 1 — choice
+  {
+    id:'s1', title:'IDENTIFICACIÓN DE OPERADORES',
+    desc:'Lee cada escenario y selecciona la búsqueda más adecuada. Solo una opción es correcta.',
+    type:'choice',
+    questions:[
+      { id:'q1', country:'ec',
+        scenario:'Un analista de <strong>inteligencia ecuatoriana</strong> necesita encontrar documentos PDF en portales gubernamentales (.gob.ec) con información sobre contratos de licitación pública.',
+        hint:'Necesitas dos operadores: uno que restrinja el dominio a .gob.ec y otro que filtre el tipo de archivo.',
+        opts:[
+          {v:'a',t:'intext:licitación filetype:pdf'},
+          {v:'b',t:'site:gob.ec filetype:pdf licitación'},
+          {v:'c',t:'inurl:gob.ec contrato'},
+          {v:'d',t:'related:gob.ec licitación'}
+        ], answer:'b',
+        explain:'site:gob.ec restringe al dominio gubernamental ecuatoriano. filetype:pdf filtra solo PDFs. Agregar "licitación" como término completa la búsqueda. Es la combinación más precisa para documentos institucionales.' },
+      { id:'q2', country:'ar',
+        scenario:'Personal de inteligencia <strong>argentina</strong> necesita localizar resoluciones ministeriales del Ministerio de Defensa (.mil.ar) durante el período 2022 a 2024.',
+        hint:'Necesitas: operador de dominio, tipo de documento y rango de años.',
+        opts:[
+          {v:'a',t:'site:mil.ar filetype:pdf resolución 2022..2024'},
+          {v:'b',t:'intext:resolución ministerial 2022 2024'},
+          {v:'c',t:'inurl:resolución site:argentina.gob'},
+          {v:'d',t:'filetype:docx resolución ministerial'}
+        ], answer:'a',
+        explain:'site:mil.ar restringe al dominio militar argentino. filetype:pdf limita el formato. El rango 2022..2024 filtra por años. La combinación más precisa y completa para el objetivo.' },
+      { id:'q3', country:'ec',
+        scenario:'Se investiga a una persona. Se necesita encontrar menciones públicas de <strong>"Carlos Mejía Salazar"</strong> en internet, <strong>excluyendo</strong> resultados de Facebook, Twitter e Instagram.',
+        hint:'El operador - excluye sitios. Las comillas buscan la frase exacta.',
+        opts:[
+          {v:'a',t:'intext:"Carlos Mejía Salazar" redes sociales'},
+          {v:'b',t:'"Carlos Mejía Salazar" -site:facebook.com -site:twitter.com -site:instagram.com'},
+          {v:'c',t:'related:"Carlos Mejía Salazar"'},
+          {v:'d',t:'inurl:"Carlos Mejía Salazar"'}
+        ], answer:'b',
+        explain:'Las comillas buscan el nombre exacto. El operador - excluye cada red social. Es la técnica OSINT estándar para encontrar menciones en prensa y foros, filtrando redes sociales.' },
+      { id:'q4', country:'ar',
+        scenario:'Un analista necesita recuperar el contenido de una página de una organización investigada que <strong>fue eliminada recientemente</strong>, pero que Google pudo haber registrado antes.',
+        hint:'Google guarda copias temporales. Hay un operador especial para acceder a esas copias.',
+        opts:[
+          {v:'a',t:'intext:eliminado site:objetivo.org'},
+          {v:'b',t:'related:objetivo.org eliminado'},
+          {v:'c',t:'cache:objetivo.org/pagina-eliminada'},
+          {v:'d',t:'inurl:archivo site:objetivo.org'}
+        ], answer:'c',
+        explain:'El operador cache: muestra la versión almacenada por Google. Si la página fue eliminada recientemente y fue indexada antes, este operador permite recuperar su contenido. Técnica OSINT legal muy utilizada.' },
+      { id:'q5', country:'ec',
+        scenario:'Se requiere identificar publicaciones de una empresa en <strong>Ecuador y Argentina simultáneamente</strong>, buscando contratos de concesión en formato PDF.',
+        hint:'El operador OR con paréntesis permite combinar dos dominios en una sola búsqueda.',
+        opts:[
+          {v:'a',t:'filetype:pdf "contrato concesión" (site:gob.ec OR site:gob.ar)'},
+          {v:'b',t:'intext:contrato site:gob.ec site:gob.ar'},
+          {v:'c',t:'inurl:concesión filetype:pdf'},
+          {v:'d',t:'cache:gob.ec contrato.pdf'}
+        ], answer:'a',
+        explain:'Las comillas buscan la frase exacta. filetype:pdf filtra documentos. El OR entre paréntesis busca en ambos dominios simultáneamente. La búsqueda de mayor cobertura y precisión para el objetivo.' }
+    ]
+  },
+
+  // EJ 2 — build (tokens aleatorios)
+  {
+    id:'s2', title:'CONSTRUCTOR DE BÚSQUEDAS',
+    desc:'Selecciona los bloques en el orden correcto para construir la consulta que cumple el objetivo. El orden en que presionas los bloques es el orden de la búsqueda.',
+    type:'build',
+    questions:[
+      { id:'b1', country:'ec',
+        scenario:'Objetivo: encontrar <strong>informes de auditoría en PDF</strong> publicados en el portal del <strong>gobierno ecuatoriano</strong> (gob.ec) con la palabra "irregularidades" en el título.',
+        hint:'Necesitas: operador de dominio, tipo de archivo y búsqueda por título.',
+        tokens:[
+          {id:'t1',t:'site:gob.ec',cls:'op'},
+          {id:'t2',t:'filetype:pdf',cls:'op'},
+          {id:'t3',t:'intitle:irregularidades',cls:'op'},
+          {id:'t4',t:'inurl:admin',cls:'op'},
+          {id:'t5',t:'"informe secreto"',cls:'str'}
+        ],
+        answer:['t1','t2','t3'],
+        explain:'Búsqueda correcta: site:gob.ec filetype:pdf intitle:irregularidades. Los tokens t4 y t5 son distractores. intitle: garantiza que el documento trata ese tema.' },
+      { id:'b2', country:'ar',
+        scenario:'Objetivo: localizar <strong>resoluciones en formato Word (.docx)</strong> en el <strong>gobierno argentino</strong> (gob.ar) con la frase exacta <strong>"acuerdo bilateral"</strong>.',
+        hint:'Necesitas: dominio, tipo de archivo y frase exacta entre comillas.',
+        tokens:[
+          {id:'t1',t:'site:gob.ar',cls:'op'},
+          {id:'t2',t:'filetype:docx',cls:'op'},
+          {id:'t3',t:'"acuerdo bilateral"',cls:'str'},
+          {id:'t4',t:'inurl:login',cls:'op'},
+          {id:'t5',t:'intitle:confidencial',cls:'op'}
+        ],
+        answer:['t1','t2','t3'],
+        explain:'Búsqueda correcta: site:gob.ar filetype:docx "acuerdo bilateral". Las comillas garantizan la frase exacta. Los tokens t4 y t5 no son relevantes para este objetivo.' },
+      { id:'b3', country:'ec',
+        scenario:'Objetivo: buscar menciones de <strong>"Andrea Suárez Vega"</strong> en internet, <strong>excluyendo</strong> Facebook y Wikipedia.',
+        hint:'Comillas para el nombre exacto, y el operador - para excluir sitios.',
+        tokens:[
+          {id:'t1',t:'"Andrea Suárez Vega"',cls:'str'},
+          {id:'t2',t:'-site:facebook.com',cls:'op'},
+          {id:'t3',t:'-site:wikipedia.org',cls:'op'},
+          {id:'t4',t:'filetype:pdf',cls:'op'},
+          {id:'t5',t:'inurl:perfil',cls:'op'}
+        ],
+        answer:['t1','t2','t3'],
+        explain:'Búsqueda correcta: "Andrea Suárez Vega" -site:facebook.com -site:wikipedia.org. Las comillas identifican a la persona. El operador - filtra sitios no deseados. t4 y t5 limitarían innecesariamente los resultados.' },
+      { id:'b4', country:'ar',
+        scenario:'Objetivo: encontrar <strong>contratos de concesión</strong> en Ecuador y Argentina simultáneamente usando el <strong>operador booleano OR</strong>.',
+        hint:'El OR entre paréntesis combina dos dominios en una sola búsqueda.',
+        tokens:[
+          {id:'t1',t:'"contrato concesión"',cls:'str'},
+          {id:'t2',t:'(site:gob.ec',cls:'op'},
+          {id:'t3',t:'OR',cls:'val'},
+          {id:'t4',t:'site:gob.ar)',cls:'op'},
+          {id:'t5',t:'filetype:html',cls:'op'}
+        ],
+        answer:['t1','t2','t3','t4'],
+        explain:'Búsqueda correcta: "contrato concesión" (site:gob.ec OR site:gob.ar). Los paréntesis agrupan el OR. filetype:html (t5) es innecesario y limita los resultados.' },
+      { id:'b5', country:'ec',
+        scenario:'Objetivo: recuperar el contenido de una página de una ONG investigada (<strong>ong-ejemplo.org</strong>) que fue <strong>eliminada</strong> pero que Google pudo registrar.',
+        hint:'El operador cache: permite acceder a versiones guardadas de páginas eliminadas.',
+        tokens:[
+          {id:'t1',t:'cache:ong-ejemplo.org',cls:'op'},
+          {id:'t2',t:'site:ong-ejemplo.org',cls:'op'},
+          {id:'t3',t:'filetype:pdf',cls:'op'},
+          {id:'t4',t:'intitle:eliminado',cls:'op'},
+          {id:'t5',t:'"página eliminada"',cls:'str'}
+        ],
+        answer:['t1'],
+        explain:'Búsqueda correcta: cache:ong-ejemplo.org. Solo ese operador es suficiente. Los demás tokens no aplican en una búsqueda de caché.' }
+    ]
+  },
+
+  // EJ 3 — choice (análisis)
+  {
+    id:'s3', title:'ANÁLISIS DE BÚSQUEDAS',
+    desc:'Se presenta una búsqueda ya construida. Analiza cada operador y determina qué información se obtendría.',
+    type:'choice',
+    questions:[
+      { id:'a1', country:'ec',
+        scenario:'Analiza esta búsqueda:\n<code>site:contraloria.gob.ec filetype:pdf intitle:informe 2021..2024</code>\n¿Qué información retorna?',
+        hint:'Lee cada operador por separado: dominio, tipo de archivo, título, rango de años.',
+        opts:[
+          {v:'a',t:'Todos los PDF de cualquier sitio .ec sobre informes'},
+          {v:'b',t:'PDF de la Contraloría ecuatoriana con "informe" en el título, publicados entre 2021 y 2024'},
+          {v:'c',t:'Documentos Word de la Contraloría con cualquier fecha'},
+          {v:'d',t:'Páginas web de la Contraloría con informes del 2021'}
+        ], answer:'b',
+        explain:'site: limita al dominio exacto de la Contraloría. filetype:pdf filtra solo PDFs. intitle:informe exige esa palabra en el título. 2021..2024 restringe el rango de años.' },
+      { id:'a2', country:'ar',
+        scenario:'Analiza esta búsqueda:\n<code>"Pedro Ramírez Ortiz" -site:facebook.com -site:linkedin.com site:gob.ar</code>\n¿Qué objetivo tiene este analista?',
+        hint:'Observa qué se busca, qué se excluye y en qué dominio se restringe.',
+        opts:[
+          {v:'a',t:'Encontrar el perfil de Facebook o LinkedIn de esta persona'},
+          {v:'b',t:'Rastrear menciones de esta persona en el portal gubernamental argentino, excluyendo redes sociales'},
+          {v:'c',t:'Buscar documentos secretos sobre esta persona'},
+          {v:'d',t:'Ver publicaciones de la persona en Wikipedia'}
+        ], answer:'b',
+        explain:'Las comillas buscan el nombre exacto. El operador - excluye redes sociales. site:gob.ar restringe al portal gubernamental argentino. El objetivo es rastrear menciones oficiales.' },
+      { id:'a3', country:'ec',
+        scenario:'Analiza esta búsqueda:\n<code>filetype:pdf OR filetype:docx "contrato" site:gob.ec 2023..2024</code>\n¿Qué documentos se obtendrían?',
+        hint:'El OR entre filetype: amplía la búsqueda a dos formatos.',
+        opts:[
+          {v:'a',t:'Solo PDFs del gobierno ecuatoriano sobre contratos del 2023'},
+          {v:'b',t:'PDFs o documentos Word del gobierno ecuatoriano con la palabra "contrato", publicados entre 2023 y 2024'},
+          {v:'c',t:'Contratos de cualquier país en cualquier formato'},
+          {v:'d',t:'Páginas web del gobierno con formularios de contratos'}
+        ], answer:'b',
+        explain:'filetype:pdf OR filetype:docx cubre ambos formatos. "contrato" busca esa palabra. site:gob.ec restringe al gobierno ecuatoriano. 2023..2024 limita el rango de años.' },
+      { id:'a4', country:'ar',
+        scenario:'Analiza esta búsqueda:\n<code>related:cancilleria.gob.ar</code>\n¿Para qué sirve en un contexto de inteligencia?',
+        hint:'El operador related: busca sitios con contenido parecido al indicado.',
+        opts:[
+          {v:'a',t:'Ver el caché de la página de Cancillería argentina'},
+          {v:'b',t:'Encontrar sitios similares a Cancillería argentina — útil para mapear el ecosistema institucional o detectar sitios clonados'},
+          {v:'c',t:'Buscar documentos de Cancillería en formato PDF'},
+          {v:'d',t:'Encontrar menciones del texto "cancillería" en otros sitios'}
+        ], answer:'b',
+        explain:'related: encuentra sitios temáticamente similares. En inteligencia permite mapear el ecosistema digital de una institución o detectar sitios que imitan a la entidad investigada.' },
+      { id:'a5', country:'ec',
+        scenario:'Analiza esta búsqueda:\n<code>intitle:"informe anual" site:gob.ec filetype:pdf 2020..2024</code>\n¿Cuál es la ventaja de usar <strong>intitle:</strong> en lugar de <strong>intext:</strong>?',
+        hint:'Piensa en qué garantiza cada operador sobre la posición de la palabra.',
+        opts:[
+          {v:'a',t:'intitle: es más rápido para el motor de búsqueda que intext:'},
+          {v:'b',t:'intitle: garantiza que el documento trata principalmente sobre ese tema, mientras que intext: solo requiere que aparezca en algún párrafo'},
+          {v:'c',t:'intitle: busca en más sitios que intext:'},
+          {v:'d',t:'No hay diferencia práctica entre ambos operadores'}
+        ], answer:'b',
+        explain:'intitle: garantiza que la frase aparece en el título, indicando que es el tema principal. intext: solo requiere que la palabra aparezca en algún lugar del texto, trayendo muchos documentos donde el término es secundario.' }
+    ]
+  },
+
+  // EJ 4 — fill
+  {
+    id:'s4', title:'MISIÓN DE CAMPO',
+    desc:'Completa la búsqueda escribiendo el operador o valor que falta para cumplir el objetivo de inteligencia.',
+    type:'fill',
+    questions:[
+      { id:'f1', country:'ec',
+        scenario:'Misión: localizar documentos de <strong>licitación pública</strong> en PDF en el portal del <strong>Ministerio de Defensa del Ecuador</strong> (defensa.gob.ec).',
+        template:'_______ filetype:pdf licitación',
+        answers:[['site:defensa.gob.ec']],
+        hint:'El operador que restringe la búsqueda a un dominio específico es site:',
+        placeholder:'Escribe el operador inicial...' },
+      { id:'f2', country:'ar',
+        scenario:'Misión: encontrar informes de <strong>gestión institucional</strong> en el portal del gobierno argentino (gob.ar) con la frase exacta <strong>"rendición de cuentas"</strong> en el título, entre 2021 y 2024.',
+        template:'site:gob.ar filetype:pdf intitle:_______ 2021..2024',
+        answers:[['"rendición de cuentas"','rendición de cuentas']],
+        hint:'Para buscar una frase exacta se usan comillas dobles.',
+        placeholder:'"frase exacta"...' },
+      { id:'f3', country:'ec',
+        scenario:'Misión: rastrear menciones de <strong>"Rodrigo Vásquez Mora"</strong> en Ecuador y Argentina simultáneamente, excluyendo redes sociales.',
+        template:'"Rodrigo Vásquez Mora" (site:gob.ec _______ site:gob.ar) -site:facebook.com -site:instagram.com',
+        answers:[['OR']],
+        hint:'El operador que une dos condiciones de dominio para buscar en ambas a la vez es OR (en mayúsculas).',
+        placeholder:'Operador booleano...' },
+      { id:'f4', country:'ar',
+        scenario:'Misión: recuperar el contenido de una página de una empresa investigada (<strong>empresaobj.com.ar</strong>) que fue eliminada pero que Google pudo haber guardado.',
+        template:'_______:empresaobj.com.ar',
+        answers:[['cache']],
+        hint:'Google guarda copias de páginas con el operador cache:',
+        placeholder:'Escribe el operador (sin los dos puntos)...' },
+      { id:'f5', country:'ec',
+        scenario:'Misión: buscar hojas de cálculo Excel (<strong>xls o xlsx</strong>) en portales gubernamentales ecuatorianos con información de contratación pública.',
+        template:'site:gob.ec (filetype:xls OR _______) contratación',
+        answers:[['filetype:xlsx','filetype:XLSX']],
+        hint:'Los archivos Excel modernos tienen extensión .xlsx',
+        placeholder:'filetype:...' }
+    ]
+  }
+];
+
+// ══════════════════════════════════════════════════════════════
+// ESTADO GLOBAL
+// ══════════════════════════════════════════════════════════════
+const TOTAL = 20;
+let scores   = {s1:0,s2:0,s3:0,s4:0};
+let answered = {s1:0,s2:0,s3:0,s4:0};
+let possible = {s1:5,s2:5,s3:5,s4:5};
+let built    = {};  // tokens seleccionados en ejercicios build
+
+// ══════════════════════════════════════════════════════════════
+// UTILIDAD — mezcla array aleatoriamente (Fisher-Yates)
+// ══════════════════════════════════════════════════════════════
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// ══════════════════════════════════════════════════════════════
+// BUILD UI
+// ══════════════════════════════════════════════════════════════
+function buildAll() {
+  buildNav();
+  buildSections();
+  switchTab(0);
+  document.getElementById('inp-grado').addEventListener('input', updateUserDisplay);
+  document.getElementById('inp-nombre').addEventListener('input', updateUserDisplay);
+}
+
+function updateUserDisplay() {
+  document.getElementById('disp-grado').textContent  = document.getElementById('inp-grado').value.trim()  || '—';
+  document.getElementById('disp-nombre').textContent = document.getElementById('inp-nombre').value.trim() || '—';
+}
+
+function buildNav() {
+  const tabs = [
+    {label:'REFERENCIA', badge:null},
+    ...EXERCISES.map((e,i) => ({label:'EJ '+(i+1)+' — '+e.title, badge:e.questions.length}))
+  ];
+  document.getElementById('nav').innerHTML = tabs.map((t,i) =>
+    `<button class="nav-tab${i===0?' active':''}" id="tab-${i}" onclick="switchTab(${i})">
+      ${t.label}${t.badge?`<span class="badge">${t.badge}</span>`:''}
+    </button>`
+  ).join('');
+}
+
+function buildSections() {
+  const wrap = document.getElementById('sections');
+
+  // Referencia
+  const refSec = document.createElement('div');
+  refSec.className = 'section active';
+  refSec.id = 'sec-0';
+  refSec.innerHTML = `
+    <div class="sec-header">
+      <div class="sec-num">REF</div>
+      <div>
+        <div class="sec-title">GUÍA DE OPERADORES DE BÚSQUEDA</div>
+        <div class="sec-desc">Referencia de operadores para localizar información en fuentes abiertas (OSINT). Estudia cada operador antes de los ejercicios.</div>
+      </div>
+    </div>
+    <div class="ref-grid">
+      ${REFERENCE.map(r => `
+        <div class="ref-card">
+          <div class="ref-card-op">${r.op}</div>
+          <div class="ref-card-name">${r.name}</div>
+          <div class="ref-card-desc">${r.desc}</div>
+          <div class="ref-card-ex">${r.ex}</div>
+        </div>`).join('')}
+    </div>`;
+  wrap.appendChild(refSec);
+
+  // Ejercicios
+  EXERCISES.forEach((ex, i) => {
+    const sec = document.createElement('div');
+    sec.className = 'section';
+    sec.id = 'sec-' + (i + 1);
+    sec.innerHTML = buildExSection(ex, i);
+    wrap.appendChild(sec);
+  });
+}
+
+function buildExSection(ex, idx) {
+  const header = `
+    <div class="sec-header">
+      <div class="sec-num">0${idx+1}</div>
+      <div>
+        <div class="sec-title">${ex.title}</div>
+        <div class="sec-desc">${ex.desc}</div>
+      </div>
+    </div>`;
+
+  const qs = ex.questions.map((q, qi) => {
+    const flag = `<span class="country-tag ${q.country}">${q.country==='ec'?'🇪🇨 ECU':'🇦🇷 ARG'}</span>`;
+    let inner = '';
+
+    if (ex.type === 'choice') {
+      inner = `<div class="choice-list" id="cl-${q.id}">
+        ${q.opts.map(o =>
+          // FIXED: usar data-attributes para evitar SyntaxError con comillas en onclick
+          `<button class="choice-btn" data-sec="${ex.id}" data-qid="${q.id}" data-val="${o.v}" data-ans="${q.answer}" onclick="chooseAnswer(this)">
+            <span class="choice-letter">${o.v.toUpperCase()}</span>
+            <span>${o.t}</span>
+          </button>`
+        ).join('')}
+      </div>`;
+
+    } else if (ex.type === 'build') {
+      built[q.id] = [];
+      // Tokens mezclados aleatoriamente
+      const shuffledTokens = shuffle(q.tokens);
+      inner = `
+        <div style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-bottom:6px">▶ BÚSQUEDA CONSTRUIDA:</div>
+        <div class="build-area">
+          <div class="build-preview empty" id="bp-${q.id}">Selecciona los bloques en orden...</div>
+        </div>
+        <div class="token-pool" id="tp-${q.id}">
+          ${shuffledTokens.map(tk =>
+            `<span class="token ${tk.cls}" id="tk-${q.id}-${tk.id}" data-qid="${q.id}" data-tkid="${tk.id}" data-tkt="${encodeURIComponent(tk.t)}" onclick="addToken(this)">${tk.t}</span>`
+          ).join('')}
+        </div>
+        <button class="check-btn" id="chk-${q.id}" data-sec="${ex.id}" data-qid="${q.id}" onclick="checkBuild(this)">▶ VERIFICAR</button>
+        <button class="reset-btn-build" data-qid="${q.id}" onclick="resetBuild(this)">↺ LIMPIAR</button>`;
+
+    } else if (ex.type === 'fill') {
+      inner = `
+        <div class="fill-row">
+          ${q.template.replace('_______',
+            `<input type="text" class="fill-input" id="fi-${q.id}"
+              placeholder="${q.placeholder}" autocomplete="off" autocorrect="off" spellcheck="false"
+              onkeydown="if(event.key==='Enter') checkFillById('${ex.id}','${q.id}')" />`)}
+        </div>
+        <button class="check-btn" id="chk-${q.id}" onclick="checkFillById('${ex.id}','${q.id}')">▶ VERIFICAR</button>`;
+    }
+
+    return `
+      <div class="ex-card" id="ec-${q.id}">
+        <div class="ex-card-head">
+          <div class="ex-num">PREGUNTA ${qi+1}</div>
+          <div class="ex-scenario">${flag} ${q.scenario.replace(/\n/g,'<br>')}</div>
+        </div>
+        <div class="ex-body">
+          <button class="hint-toggle" onclick="toggleHint('hint-${q.id}',this)">⚡ MOSTRAR PISTA</button>
+          <div class="hint-box" id="hint-${q.id}">${q.hint}</div>
+          ${inner}
+          <div class="feedback" id="fb-${q.id}"></div>
+        </div>
+      </div>`;
+  }).join('');
+
+  return header + `<div class="ex-list">${qs}</div>`;
+}
+
+// ══════════════════════════════════════════════════════════════
+// NAVEGACIÓN
+// ══════════════════════════════════════════════════════════════
+function switchTab(i) {
+  document.querySelectorAll('.nav-tab').forEach((t,j) => t.classList.toggle('active', j===i));
+  document.querySelectorAll('.section').forEach((s,j) => s.classList.toggle('active', j===i));
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+function toggleHint(id, btn) {
+  const box  = document.getElementById(id);
+  const show = !box.classList.contains('show');
+  box.classList.toggle('show', show);
+  btn.textContent = show ? '⚡ OCULTAR PISTA' : '⚡ MOSTRAR PISTA';
+  btn.style.color = show ? 'var(--amber)' : '';
+}
+
+// ══════════════════════════════════════════════════════════════
+// RESPUESTAS — choice (usa data-attributes, sin comillas en onclick)
+// ══════════════════════════════════════════════════════════════
+function chooseAnswer(btn) {
+  const secId  = btn.dataset.sec;
+  const qId    = btn.dataset.qid;
+  const val    = btn.dataset.val;
+  const correct= btn.dataset.ans;
+  const card   = document.getElementById('ec-' + qId);
+  if (card.dataset.answered) return;
+  card.dataset.answered = '1';
+
+  const ok = val === correct;
+  document.querySelectorAll('[data-qid="'+qId+'"].choice-btn').forEach(b => {
+    b.disabled = true;
+    if (b.dataset.val === correct) b.classList.add('ok');
+    if (b.dataset.val === val && !ok) b.classList.add('fail');
+  });
+
+  const ex = EXERCISES.find(e => e.id === secId);
+  const q  = ex.questions.find(x => x.id === qId);
+  showFeedback(qId, ok, q.explain, null);
+  recordScore(secId, ok);
+  card.classList.add(ok ? 'answered-ok' : 'answered-fail');
+}
+
+// ══════════════════════════════════════════════════════════════
+// RESPUESTAS — build (tokens aleatorios, usa data-attributes)
+// ══════════════════════════════════════════════════════════════
+function addToken(el) {
+  const qId  = el.dataset.qid;
+  const tkId = el.dataset.tkid;
+  const txt  = decodeURIComponent(el.dataset.tkt);
+  const card = document.getElementById('ec-' + qId);
+  if (card.dataset.answered || el.classList.contains('used')) return;
+  el.classList.add('used');
+  built[qId] = built[qId] || [];
+  built[qId].push({id: tkId, t: txt});
+  const preview = document.getElementById('bp-' + qId);
+  preview.classList.remove('empty');
+  preview.textContent = built[qId].map(x => x.t).join(' ');
+}
+
+function resetBuild(btn) {
+  const qId  = btn.dataset.qid;
+  const card = document.getElementById('ec-' + qId);
+  if (card.dataset.answered) return;
+  built[qId] = [];
+  const preview = document.getElementById('bp-' + qId);
+  preview.textContent = 'Selecciona los bloques en orden...';
+  preview.classList.add('empty');
+  document.querySelectorAll('[id^="tk-'+qId+'-"]').forEach(t => t.classList.remove('used'));
+}
+
+function checkBuild(btn) {
+  const secId = btn.dataset.sec;
+  const qId   = btn.dataset.qid;
+  const card  = document.getElementById('ec-' + qId);
+  if (card.dataset.answered) return;
+  card.dataset.answered = '1';
+  btn.disabled = true;
+  const ex  = EXERCISES.find(e => e.id === secId);
+  const q   = ex.questions.find(x => x.id === qId);
+  const sel = (built[qId] || []).map(x => x.id);
+  const ok  = JSON.stringify(sel) === JSON.stringify(q.answer);
+  const correctStr = q.answer.map(id => q.tokens.find(t => t.id === id).t).join(' ');
+  showFeedback(qId, ok, q.explain, ok ? null : 'Búsqueda correcta: ' + correctStr);
+  recordScore(secId, ok);
+  card.classList.add(ok ? 'answered-ok' : 'answered-fail');
+}
+
+// ══════════════════════════════════════════════════════════════
+// RESPUESTAS — fill
+// ══════════════════════════════════════════════════════════════
+function checkFillById(secId, qId) {
+  const card = document.getElementById('ec-' + qId);
+  if (card.dataset.answered) return;
+  card.dataset.answered = '1';
+  const ex  = EXERCISES.find(e => e.id === secId);
+  const q   = ex.questions.find(x => x.id === qId);
+  const inp = document.getElementById('fi-' + qId);
+  const val = inp.value.trim().toLowerCase();
+  const ok  = q.answers[0].some(a => val === a.toLowerCase() || val.includes(a.toLowerCase()));
+  inp.style.borderBottomColor = ok ? 'var(--green)' : 'var(--red)';
+  inp.style.color = ok ? 'var(--green)' : 'var(--red)';
+  inp.readOnly = true;
+  document.getElementById('chk-' + qId).disabled = true;
+  showFeedback(qId, ok, q.explain, ok ? null : 'Respuesta esperada: ' + q.answers[0][0]);
+  recordScore(secId, ok);
+  card.classList.add(ok ? 'answered-ok' : 'answered-fail');
+}
+
+// ══════════════════════════════════════════════════════════════
+// FEEDBACK Y PUNTUACIÓN
+// ══════════════════════════════════════════════════════════════
+function showFeedback(qId, ok, explain, extra) {
+  const fb = document.getElementById('fb-' + qId);
+  fb.className = 'feedback show ' + (ok ? 'ok' : 'fail');
+  const icon = ok ? '✓ CORRECTO — ' : '✗ INCORRECTO — ';
+  const extraHtml = extra ? `<br><span class="correct">${extra}</span>` : '';
+  fb.innerHTML = icon + explain + extraHtml;
+}
+
+function recordScore(secId, ok) {
+  if (ok) scores[secId]++;
+  answered[secId]++;
+  updateScoreUI();
+  checkFinished();
+}
+
+function updateScoreUI() {
+  const correct = Object.values(scores).reduce((a,b) => a+b, 0);
+  const grade   = (correct / TOTAL * 20).toFixed(1);
+  document.getElementById('sc-val').textContent = grade;
+  ['s1','s2','s3','s4'].forEach((sid,i) => {
+    document.getElementById('sc-e'+(i+1)).textContent = scores[sid]+'/'+possible[sid];
+  });
+  const totalAnswered = Object.values(answered).reduce((a,b) => a+b, 0);
+  document.getElementById('progress-bar').style.width = (totalAnswered / TOTAL * 100)+'%';
+}
+
+function checkFinished() {
+  const total = Object.values(answered).reduce((a,b) => a+b, 0);
+  if (total < TOTAL) return;
+  setTimeout(showFinal, 600);
+}
+
+// ══════════════════════════════════════════════════════════════
+// PANTALLA FINAL
+// ══════════════════════════════════════════════════════════════
+function showFinal() {
+  const correct = Object.values(scores).reduce((a,b) => a+b, 0);
+  const grade   = (correct / TOTAL * 20).toFixed(1);
+  const pct     = Math.round(correct / TOTAL * 100);
+  const gEl     = document.getElementById('final-grade');
+
+  let label, color;
+  if      (grade >= 18) { label = 'ANALISTA ÉLITE · EXCELENTE';      color = 'var(--green)'; }
+  else if (grade >= 14) { label = 'AGENTE OPERATIVO · MUY BUENO';     color = 'var(--cyan)';  }
+  else if (grade >= 10) { label = 'CADETE EN FORMACIÓN · APROBADO';   color = 'var(--amber)'; }
+  else                  { label = 'REQUIERE REFUERZO · NO APROBADO';  color = 'var(--red)';   }
+
+  gEl.textContent = grade + '/20';
+  gEl.style.color = color;
+  gEl.style.textShadow = '0 0 40px ' + color;
+  document.getElementById('final-label').textContent = label;
+  document.getElementById('fs-correct').textContent  = correct;
+  document.getElementById('fs-total').textContent    = TOTAL;
+  document.getElementById('fs-pct').textContent      = pct + '%';
+
+  const grado  = document.getElementById('inp-grado').value.trim()  || 'No especificado';
+  const nombre = document.getElementById('inp-nombre').value.trim() || 'No especificado';
+  document.getElementById('final-id').innerHTML = `Operador: <strong>${grado} ${nombre}</strong>`;
+
+  document.getElementById('score-panel').style.display = 'none';
+  document.getElementById('sections').style.display    = 'none';
+  document.getElementById('final').classList.add('show');
+  switchTab(-1);
+
+  // Cargar tabla actualizada
+  if (typeof window.loadScores === 'function') window.loadScores();
+}
+
+// ══════════════════════════════════════════════════════════════
+// ENVIAR TEST (guardar en Firebase)
+// ══════════════════════════════════════════════════════════════
+async function handleSave() {
+  const grado  = document.getElementById('inp-grado').value.trim();
+  const nombre = document.getElementById('inp-nombre').value.trim();
+
+  if (!grado || !nombre) {
+    const msg = document.getElementById('save-msg');
+    msg.textContent = '⚠ Completa el grado y nombre antes de enviar.';
+    msg.style.color = 'var(--amber)';
+    return;
+  }
+
+  const correct = Object.values(scores).reduce((a,b) => a+b, 0);
+  const puntaje = parseFloat((correct / TOTAL * 20).toFixed(1));
+  const btn     = document.getElementById('save-btn');
+  const msg     = document.getElementById('save-msg');
+
+  btn.disabled    = true;
+  btn.textContent = '▶ ENVIANDO...';
+
+  try {
+    await window.saveScore({
+      grado,
+      nombre,
+      puntaje,
+      fecha: new Date().toLocaleString('es-EC')
+    });
+    msg.textContent = '✓ Test enviado y registrado correctamente.';
+    msg.style.color = 'var(--green)';
+    btn.textContent = '✓ ENVIADO';
+    // Recargar tabla
+    if (typeof window.loadScores === 'function') window.loadScores();
+  } catch(e) {
+    msg.textContent = '✗ Error al enviar: ' + e.message;
+    msg.style.color = 'var(--red)';
+    btn.disabled    = false;
+    btn.textContent = '▶ ENVIAR TEST';
+  }
+}
+
+// ── INICIO ──
+buildAll();
+</script>
+</body>
+</html>
